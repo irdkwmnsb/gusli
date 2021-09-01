@@ -1,0 +1,7 @@
+aiogram
+python-vlc
+python-dotenv
+pymongo
+motor
+pathvalidate
+rich
