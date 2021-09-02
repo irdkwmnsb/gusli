@@ -42,14 +42,16 @@ class AudioRequest():
     by_username: Optional[str]
     mrl: str
     title: str
+    filename: str
     orig_message: types.Message
 
-    def __init__(self, by, by_displayname, mrl, title, orig_message, by_username=None):
+    def __init__(self, by, by_displayname, mrl, title, orig_message, filename, by_username=None):
         self.by = by
         self.by_displayname = by_displayname
         self.mrl = mrl
         self.title = title
         self.by_username = by_username
+        self.filename = filename
         self.orig_message = orig_message
 
 
@@ -71,6 +73,7 @@ async def enqueue(message: types.Message):
                       loc,
                       audio.title,
                       message,
+                      audio.file_name,
                       from_user.username
                       )
     logger.debug(rq.__dict__)
@@ -79,7 +82,10 @@ async def enqueue(message: types.Message):
     #     await start_playing()
     async with play_queue_lock:
         await play_queue.put(rq)
-        await message.reply(f"Added to queue, {play_queue.qsize() - 1} songs before you")
+        msg = f"{play_queue.qsize() - 1} songs before you"
+        if play_current_task is None:
+            msg = "will be played next"
+        await message.reply(f"Added to queue, " + msg)
 
 
 @dp.message_handler(commands=["skip"])
@@ -125,10 +131,11 @@ async def skip(message: types.Message):
     if not vol.isnumeric():
         await message.reply("Incorrect arg")
     vol = int(vol)
-    if vol < 0 or vol > 100:
-        await message.reply("Not in range [0; 100]")
     player.audio_set_volume(vol)
-    await message.answer("ok")
+    if vol < 0 or vol > 100:
+        await message.reply("Not in range [0; 100], proceed at own risk.")
+    else:
+        await message.answer("ok")
 
 
 @dp.message_handler(commands=["volume_get"])
@@ -139,8 +146,11 @@ async def skip(message: types.Message):
 
 
 def format_request(song: AudioRequest):
-    return f"{song.title} requested by {song.by_displayname}" + \
-           f" (@ {song.by_username})" if song.by_username else ""
+    if song:
+        return f"{song.title or song.filename} requested by {song.by_displayname}" + \
+               f" (@ {song.by_username})" if song.by_username else ""
+    else:
+        return "Nothing is playing"
 
 
 def format_time(time_ms):
@@ -160,28 +170,30 @@ def make_bar(percent, length):
 
 
 def get_player_string():
-    emojis = {vlc.Ended: "🔚",
-              vlc.Playing: "▶",
-              vlc.Paused: "⏸",
-              vlc.Buffering: "⌛",
-              vlc.Opening: "📂",
-              vlc.Error: "‼",
-              vlc.NothingSpecial: "🤷🏻‍",
-              vlc.Stopped: "⏹"}
+    emojis = {vlc.State.Ended: "🔚",
+              vlc.State.Playing: "▶",
+              vlc.State.Paused: "⏸",
+              vlc.State.Buffering: "⌛",
+              vlc.State.Opening: "📂",
+              vlc.State.Error: "‼",
+              vlc.State.NothingSpecial: "🤷🏻‍",
+              vlc.State.Stopped: "⏹"}
     bar_lengh = 20
     emoji = emojis[player.get_state()]
     l = player.get_length()
     t = player.get_time()
     bar = make_bar(player.get_position() * 100, bar_lengh)
-    return f"{emoji} {format_time(t)}{bar}{l}({format_time(l - t)})\n" + format_request(play_current_task)
+    return f"{emoji} {format_time(t)} {bar} {format_time(l)} ({format_time(l - t)})\n" + format_request(
+        play_current_task)
 
 
 @dp.message_handler(commands=["list", "queue"])
 @auth.requires_permission("player.queue.list")
 async def skip(message: types.Message):
-    msg = ["Currently playing:"]
-    msg.append("==============")
-    msg.append("Current queue:")
+    msg = ["Currently playing:",
+           get_player_string(),
+           "==============",
+           "Current queue:"]
     # noinspection PyUnresolvedReferences
     q = play_queue._queue
     for i, song in enumerate(q):  # type: int, AudioRequest
@@ -202,24 +214,22 @@ async def playing_task():
             player_logger.info("Waiting for song")
             play_current_task = await play_queue.get()
             player_logger.info("Playing %s", play_current_task.title)
-            try:
-                player.set_mrl(play_current_task.mrl)
-                player.play()
-                # if not player.is_playing():
-                #     await song.orig_message.reply("Could not start song")
-                # else:
-                #     logger.info("Successfully started")
-            except Exception:
-                player_logger.exception("Failed playing song")
+            player.set_mrl(play_current_task.mrl)
+            result = player.play()
+            # if not player.is_playing():
+            #     await song.orig_message.reply("Could not start song")
+            # else:
+            #     logger.info("Successfully started")
+            if result == -1:
+                player_logger.error("Failed playing song")
+                player_logger.debug(play_current_task)
                 await play_current_task.orig_message.reply("Error playing that song:")
-                traceback.format_exc()
-                continue
-            await asyncio.sleep(0.2)
-            while player.get_state() != vlc.Ended:
+            while player.get_state() in [vlc.State.Opening, vlc.State.Buffering]:
+                player_logger.info(f"Player is loading")
+                await asyncio.sleep(0.2)
+            while player.get_state() != vlc.State.Ended:
                 player_logger.info(f"Player is playing")
                 time_to_sleep = (player.get_length() - player.get_time()) / 1000
-                if time_to_sleep < 0.2:
-                    break
                 player_logger.info(f"Sleeping %s seconds", time_to_sleep)
                 await asyncio.sleep(time_to_sleep)
         except asyncio.CancelledError:
