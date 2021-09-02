@@ -1,6 +1,7 @@
 import json
 from typing import Optional
 
+import math
 from aiogram import types
 from aiogram import md
 from aiogram.types import ContentType
@@ -22,9 +23,12 @@ import mimetypes
 play_queue = asyncio.queues.Queue()  # type: asyncio.queues.Queue[AudioRequest]
 # noinspection PyTypeChecker
 play_task = None  # type: asyncio.Task
+# noinspection PyTypeChecker
+play_current_task = None  # type: AudioRequest
 play_queue_lock = asyncio.Lock()
 MUSIC_FOLDER = os.path.join(config.STORAGE_LOCATION, "music")
 os.makedirs(MUSIC_FOLDER, exist_ok=True)
+# noinspection PyTypeChecker
 player = None  # type: vlc.MediaPlayer
 
 
@@ -90,7 +94,15 @@ async def skip(message: types.Message):
 @auth.requires_permission("player.queue.pause")
 async def skip(message: types.Message):
     logger.info("Trying to pause")
-    player.pause()
+    player.set_pause(True)
+    await message.answer("ok")
+
+
+@dp.message_handler(commands=["play"])
+@auth.requires_permission("player.queue.play")
+async def skip(message: types.Message):
+    logger.info("Trying to pause")
+    player.set_pause(False)
     await message.answer("ok")
 
 
@@ -98,7 +110,7 @@ async def skip(message: types.Message):
 @auth.requires_permission("player.queue.stop")
 async def skip(message: types.Message):
     logger.info("Trying to stop")
-    play_queue.empty()
+    play_queue._queue.clear()
     play_task.cancel()
     await message.answer("ok")
 
@@ -126,32 +138,72 @@ async def skip(message: types.Message):
     await message.answer(f"Player is at {vol}")
 
 
+def format_request(song: AudioRequest):
+    return f"{song.title} requested by {song.by_displayname}" + \
+           f" (@ {song.by_username})" if song.by_username else ""
+
+
+def format_time(time_ms):
+    neg = time_ms < 0
+    time_ms = abs(time_ms)
+    secs = time_ms / 1000
+    mins = secs / 60
+    hours = mins / 60
+    return ("-" if neg else "") + \
+           (f"{int(hours)}:" if hours > 1 else "") + \
+           f"{int(mins % 60):02}:{int(secs % 60):02}"
+
+
+def make_bar(percent, length):
+    cells = max(1, int(round(percent * length / 100)))
+    return "#" * cells + "-" * (length - cells)
+
+
+def get_player_string():
+    emojis = {vlc.Ended: "🔚",
+              vlc.Playing: "▶",
+              vlc.Paused: "⏸",
+              vlc.Buffering: "⌛",
+              vlc.Opening: "📂",
+              vlc.Error: "‼",
+              vlc.NothingSpecial: "🤷🏻‍",
+              vlc.Stopped: "⏹"}
+    bar_lengh = 20
+    emoji = emojis[player.get_state()]
+    l = player.get_length()
+    t = player.get_time()
+    bar = make_bar(player.get_position() * 100, bar_lengh)
+    return f"{emoji} {format_time(t)}{bar}{l}({format_time(l - t)})\n" + format_request(play_current_task)
+
+
 @dp.message_handler(commands=["list", "queue"])
 @auth.requires_permission("player.queue.list")
 async def skip(message: types.Message):
-    msg = ["Current queue:"]
+    msg = ["Currently playing:"]
+    msg.append("==============")
+    msg.append("Current queue:")
     # noinspection PyUnresolvedReferences
     q = play_queue._queue
     for i, song in enumerate(q):  # type: int, AudioRequest
-        msg.append(f"{i + 1}. {song.title} requested by {song.by_displayname}" +
-                   (f" (@ {song.by_username})" if song.by_username else ""))
+        msg.append(f"{i + 1}. {format_request(song)}")
     if not q:
-        msg.append("empty")
+        msg.append("Nothing")
     await message.answer("\n".join(msg))
 
 
 async def playing_task():
     global player
+    global play_current_task
     player = vlc.MediaPlayer()  # type: vlc.MediaPlayer
     player_logger = logger.getChild("player")
     player_logger.info("Started player")
     while True:
         try:
             player_logger.info("Waiting for song")
-            song = await play_queue.get()
-            player_logger.info("Playing %s", song.title)
+            play_current_task = await play_queue.get()
+            player_logger.info("Playing %s", play_current_task.title)
             try:
-                player.set_mrl(song.mrl)
+                player.set_mrl(play_current_task.mrl)
                 player.play()
                 # if not player.is_playing():
                 #     await song.orig_message.reply("Could not start song")
@@ -159,11 +211,11 @@ async def playing_task():
                 #     logger.info("Successfully started")
             except Exception:
                 player_logger.exception("Failed playing song")
-                await song.orig_message.reply("Error playing that song:")
+                await play_current_task.orig_message.reply("Error playing that song:")
                 traceback.format_exc()
                 continue
             await asyncio.sleep(0.2)
-            while player.get_media() != -1:
+            while player.get_state() != vlc.Ended:
                 player_logger.info(f"Player is playing")
                 time_to_sleep = (player.get_length() - player.get_time()) / 1000
                 if time_to_sleep < 0.2:
@@ -172,7 +224,9 @@ async def playing_task():
                 await asyncio.sleep(time_to_sleep)
         except asyncio.CancelledError:
             player_logger.info("Got CancelledError, skipping song")
+        finally:
             player.stop()
+            play_current_task = None
             # if play_queue.empty():
             #     raise
 
