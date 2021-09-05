@@ -9,6 +9,7 @@ import guslibot.db as db
 import guslibot.log as log
 
 bot = Bot(token=config.API_TOKEN)
+Bot.set_current(bot)
 
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)

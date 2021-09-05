@@ -11,28 +11,46 @@ import inspect
 # DEFAULT_PERMS = ["player"]
 class ObjectReference(enum.Enum):
     user = db.users
-    chats = db.chats
+    chat = db.chats
 
 
-async def has_permission(object_type: ObjectReference, id, permission: str):
-    obj = await object_type.value.find_one({"_id": id})
-    if not obj:
-        return False
-    perm_list = obj["perm_list"]
-    log.logger.debug(perm_list)
+def match_permission(permission: str, to_test: str):
+    return to_test.startswith(permission) or permission == "*"
+
+
+async def has_permission(perm_list, permission: str):
     if not perm_list:
         return False
-    for perm in perm_list:
-        if permission.startswith(perm) or perm == "*":
-            return True
+    can = False
+    for perm in perm_list:  # type: str
+        if len(perm) > 1:
+            if match_permission(perm[1:], permission):
+                can = perm[0] == "+"
+        else:
+            log.logger.error(f"Bad permission : {perm}")
+    return can
+
+
+async def fetch_perms(object_type: ObjectReference, id: int):
+    obj = await object_type.value.find_one({"_id": id})
+    if not obj:
+        return []
+    perm_list = obj["perm_list"]
+    return perm_list
+
+
+async def user_in_chat_has_permission(user_id: int, chat_id, permission: str):
+    perms = await fetch_perms(ObjectReference.chat, chat_id) + await fetch_perms(ObjectReference.user, user_id)
+    log.logger.debug(perms)
+    return await has_permission(perms, permission)
 
 
 async def user_has_permission(user_id: int, permission: str):
-    return await has_permission(ObjectReference.user, user_id, permission)
+    return await has_permission(await fetch_perms(ObjectReference.user, user_id), permission)
 
 
 async def chat_has_permission(chat_id: int, permission: str):
-    return await has_permission(ObjectReference.chats, chat_id, permission)
+    return await has_permission(await fetch_perms(ObjectReference.chat, chat_id), permission)
 
 
 def _check_spec(spec: inspect.FullArgSpec, kwargs: dict):
@@ -44,8 +62,7 @@ def requires_permission(permission: str):
         spec = inspect.getfullargspec(callback)
 
         async def handler(message: Union[types.Message, types.CallbackQuery], *args, **kwargs):
-            if not (await user_has_permission(message.from_user.id, permission) or
-                    await chat_has_permission(message.chat.id, permission)):
+            if not await user_in_chat_has_permission(message.from_user.id, message.chat.id, permission):
                 err_string = "You don't have permissions to " + permission
                 if isinstance(message, types.Message):
                     await message.reply(err_string)

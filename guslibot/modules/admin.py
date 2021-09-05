@@ -20,11 +20,11 @@ import traceback
 import mimetypes
 
 
-async def extract_int(arg, on_error: Callable):
+def extract_int(arg):
     if arg.isnumeric():
         return int(arg)
     else:
-        await on_error()
+        return None
 
 
 @dp.message_handler(commands=["grant_permission_user"])
@@ -36,11 +36,15 @@ async def grant_user(message: types.Message):
     expl = message.text.split()
     if len(expl) < 2:
         await message.reply("Must specify permission to grant.")
+        return
     permission = expl[1]
     if len(expl) > 2:
-        target = await extract_int(expl[2], lambda: message.reply("Incorrect user id"))
-    if not target:
+        target = extract_int(expl[2])
+        if target is None:
+            return message.reply("Incorrect user id")
+    if target is None:
         await message.reply("Must specify user. Reply to message or specify user id")
+        return
     await db.users.update_one({"_id": target}, {"$addToSet": {"perm_list": permission}}, upsert=True)
     await message.reply(f"Granted user {target} permission to {permission}")
 
@@ -53,9 +57,13 @@ async def list_user(message: types.Message):
         target = message.reply_to_message.from_user.id
     expl = message.text.split()
     if len(expl) > 2:
-        target = await extract_int(expl[2], lambda: message.reply("Incorrect user id"))
-    if not target:
+        target = extract_int(expl[2])
+        if target is None:
+            await message.reply("Incorrect user id")
+            return
+    if target is None:
         await message.reply("Must specify user. Reply to message or specify user id")
+        return
     d = await db.users.find_one({"_id": target}) or {"perm_list": []}
     await message.reply(f"User {target} has permissions to:\n" + "\n".join(d["perm_list"]))
 
@@ -69,11 +77,15 @@ async def revoke_user(message: types.Message):
     expl = message.text.split()
     if len(expl) < 2:
         await message.reply("Must specify permission to revoke.")
+        return
     permission = expl[1]
     if len(expl) > 2:
-        target = await extract_int(expl[2], lambda: message.reply("Incorrect user id"))
+        target = extract_int(expl[2])
+        if target is None:
+            await message.reply("Incorrect user id")
     if not target:
         await message.reply("Must specify user. Reply to message or specify user id")
+        return
     await db.users.update_one({"_id": target}, {"$pull": {"perm_list": permission}}, upsert=True)
     await message.reply(f"Revoked user {target} permission to {permission}")
 
@@ -85,6 +97,7 @@ async def grant_chat(message: types.Message):
     expl = message.text.split()
     if len(expl) < 2:
         await message.reply("Must specify permission to grant.")
+        return
     permission = expl[1]
     await db.chats.update_one({"_id": target}, {"$addToSet": {"perm_list": permission}}, upsert=True)
     await message.reply(f"Granted chat {target} permission to {permission}")
@@ -96,7 +109,10 @@ async def list_user(message: types.Message):
     target = message.chat.id
     expl = message.text.split()
     if len(expl) > 2:
-        target = await extract_int(expl[2], lambda: message.reply("Incorrect chat id"))
+        target = extract_int(expl[2])
+        if target is None:
+            await message.reply("Incorrect chat id")
+            return
     d = await db.chats.find_one({"_id": target}) or {"perm_list": []}
     await message.reply(f"Chat {target} has permissions to:\n" + "\n".join(d["perm_list"]))
 
@@ -108,8 +124,12 @@ async def revoke_chat(message: types.Message):
     expl = message.text.split()
     if len(expl) < 2:
         await message.reply("Must specify permission to revoke.")
+        return
     permission = expl[1]
     if len(expl) > 2:
-        target = await extract_int(expl[2], lambda: message.reply("Incorrect chat id"))
+        target = extract_int(expl[2])
+        if target is None:
+            await message.reply("Incorrect chat id")
+            return
     await db.chats.update_one({"_id": target}, {"$pull": {"perm_list": permission}}, upsert=True)
     await message.reply(f"Revoked chat {target} permission to {permission}")
