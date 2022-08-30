@@ -5,3 +5,7 @@ pymongo
 motor
 pathvalidate
 rich
+fastapi
+pydantic
+python-multipart
+content_size_limit_asgi

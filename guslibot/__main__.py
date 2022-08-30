@@ -5,7 +5,8 @@ from aiogram.utils import executor
 
 import guslibot.bot
 import guslibot.log as log
-import guslibot.modules.player as player_module
+import guslibot.player as player_module
+from guslibot.web.app import start_server
 
 
 async def rerun_on_exception(coro, *args, **kwargs):
@@ -25,7 +26,8 @@ async def rerun_on_exception(coro, *args, **kwargs):
 if __name__ == "__main__":
     loop = guslibot.bot.asyncio.get_event_loop()
 
-    loop.run_until_complete(player_module.start_playing())
+    loop.run_until_complete(player_module.start_player())
+    loop.create_task(start_server())
 
     executor.start_polling(guslibot.bot.dp, on_startup=[], loop=loop)
 
