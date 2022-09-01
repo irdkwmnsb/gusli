@@ -179,4 +179,4 @@ def pl_get_player_string():
 def start_player(loop):
     global play_task
     logger.info("Starting player")
-    play_task = asyncio.create_task(playing_task())
+    play_task = loop.create_task(playing_task())
