@@ -176,7 +176,7 @@ def pl_get_player_string():
            + format_request(play_current_task)
 
 
-async def start_player(loop):
+def start_player(loop):
     global play_task
     logger.info("Starting player")
     play_task = asyncio.create_task(playing_task())
