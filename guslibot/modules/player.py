@@ -124,8 +124,8 @@ async def loop_off(message: types.Message):
     await message.answer("ok")
 
 
-def set_volume(vol):
-    pl_set_volume(vol)
+async def set_volume(vol):
+    await pl_set_volume(vol)
 
 
 @dp.message_handler(commands=["volume_set"])
@@ -143,7 +143,7 @@ async def volume_set(message: types.Message):
                                                                              "player.volume.set.extreme"):
         await message.reply("You are not allowed to set the volume out of range [0; 100]")
         return
-    set_volume(vol)
+    await set_volume(vol)
     if vol < 0 or vol > 100:
         await message.reply("Not in range [0; 100], proceed at own risk.")
     else:

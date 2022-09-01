@@ -86,19 +86,12 @@ async def playing_task():
     player_logger = logger.getChild("player")
     player_logger.info("Started player")
     global player
-    player_logger.debug("1")
     global play_current_task
-    player_logger.debug("2")
     global play_set_volume
-    player_logger.debug("3")
     global play_is_looped
-    player_logger.debug("4")
     player = vlc.MediaPlayer()  # type: vlc.MediaPlayer
-    player_logger.debug("5")
     player_logger.debug(repr(player))
-    player_logger.debug("6")
     while True:
-        player_logger.debug("7")
         try:
             player_logger.info("Waiting for song")
             play_current_task = await play_queue.get()
