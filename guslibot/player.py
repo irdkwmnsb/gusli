@@ -37,6 +37,7 @@ class TelegramAudioRequest(AudioRequest):
     by_id: int
     orig_message: types.Message
     by_username: Optional[str]
+
     class Config:
         arbitrary_types_allowed = True
 
@@ -76,9 +77,9 @@ async def pl_set_volume(new_vol):
     play_set_volume = new_vol
     player.audio_set_volume(new_vol)
 
+
 async def pl_get_queue():
     return play_queue._queue
-
 
 
 async def playing_task():
@@ -89,7 +90,7 @@ async def playing_task():
     player = vlc.MediaPlayer()  # type: vlc.MediaPlayer
     player_logger = logger.getChild("player")
     player_logger.info("Started player")
-    player_logger.debug(repr(player))
+    # player_logger.debug(repr(player))
     while True:
         try:
             player_logger.info("Waiting for song")
@@ -156,6 +157,7 @@ def make_bar(percent, length):
     cells = max(1, int(round(percent * length / 100)))
     return "#" * cells + "-" * (length - cells)
 
+
 def pl_get_player_string():
     emojis = {vlc.State.Ended: "🔚",
               vlc.State.Playing: "▶",
@@ -173,7 +175,8 @@ def pl_get_player_string():
     return f"{emoji}{' 🔁' if play_is_looped else ''} {format_time(t)} {bar} {format_time(l)} ({format_time(t - l)})\n" \
            + format_request(play_current_task)
 
-async def start_player():
+
+async def start_player(loop):
     global play_task
     logger.info("Starting player")
     play_task = asyncio.create_task(playing_task())
