@@ -25,7 +25,7 @@ async def rerun_on_exception(coro, *args, **kwargs):
 
 async def main():
     await player_module.start_player()
-    asyncio.create_task(start_server())
+    # asyncio.create_task(start_server())
     executor.start_polling(guslibot.bot.dp, on_startup=[])
 
 
