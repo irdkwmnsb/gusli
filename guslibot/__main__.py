@@ -24,7 +24,7 @@ async def rerun_on_exception(coro, *args, **kwargs):
 
 
 if __name__ == "__main__":
-    loop = guslibot.bot.asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
 
     player_module.start_player(loop)
     loop.create_task(start_server())
