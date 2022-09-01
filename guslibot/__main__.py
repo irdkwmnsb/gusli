@@ -1,5 +1,8 @@
 import asyncio
 import traceback
+import nest_asyncio
+nest_asyncio.apply()
+
 
 from aiogram.utils import executor
 
