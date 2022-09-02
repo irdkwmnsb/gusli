@@ -29,7 +29,7 @@ async def get_loc_for_media(file: Union[types.Audio, types.Voice, types.Video]):
 class AudioRequest(pydantic.BaseModel):
     by_displayname: str
     mrl: str
-    title: str
+    title: Optional[str]
     filename: str
 
 
