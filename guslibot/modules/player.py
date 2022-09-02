@@ -185,8 +185,11 @@ async def tts(message: types.Message):
             })
             logger.debug(r.status_code)
             with open(loc, "wb") as download_file:
+                logger.debug("Opened")
+                logger.debug("Reading")
                 for chunk in r.iter_bytes():
                     download_file.write(chunk)
+                    logger.debug("Putting")
             await msg.edit_text("Downloaded...")
     from_user = message.from_user
     rq = TelegramAudioRequest(by_id=from_user.id,
