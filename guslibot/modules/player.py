@@ -1,3 +1,6 @@
+import pathlib
+import tempfile
+
 from aiogram import types
 from aiogram.types import ContentType
 
@@ -8,6 +11,9 @@ from guslibot.log import logger
 import asyncio.queues
 import os
 import vlc
+import httpx
+import hashlib
+import textwrap
 
 # import magic
 from guslibot.player import *
@@ -156,6 +162,42 @@ async def volume_get(message: types.Message):
     await message.answer(f"Player is at {play_set_volume}")
 
 
+def get_loc_for_tts(text: str):
+    filename = hashlib.md5(text.encode()).hexdigest()
+    return pathlib.Path(MUSIC_FOLDER, filename + ".mp3")
+
+
+@dp.message_handler(commands=["tts"])
+@auth.requires_permission("player.tts")
+async def tts(message: types.Message):
+    msg = await message.reply("Working...")
+    text = message.get_args()
+    loc = get_loc_for_tts(text)
+    logger.debug(loc)
+    if not loc.exists():
+        await msg.edit_text("Downloading...")
+        async with httpx.AsyncClient() as client:
+            r = await client.post("https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize", data={
+                "text": text,
+                "format": "mp3"
+            }, headers={
+                "Authorization": "Api-Key AQVN29zZnajTeidJjAFBEdCoOaoc7clOGaKtzKpU"
+            })
+            logger.debug(r.status_code)
+            with open(loc, "wb") as download_file:
+                for chunk in r.iter_bytes():
+                    download_file.write(chunk)
+            await msg.edit_text("Downloaded...")
+    from_user = message.from_user
+    rq = TelegramAudioRequest(by_id=from_user.id,
+                              by_displayname=from_user.first_name + " " + (from_user.last_name or ""),
+                              mrl=loc,
+                              title=textwrap.shorten(text, placeholder=" ...", width=30),
+                              orig_message=message,
+                              filename="tts.mp3",
+                              by_username=from_user.username)
+    await pl_add(rq)
+    await msg.edit_text("Added...")
 
 
 @dp.message_handler(commands=["list", "queue", "q"])
@@ -172,4 +214,3 @@ async def skip(message: types.Message):
     if not q:
         msg.append("Nothing")
     await message.answer("\n".join(msg))
-

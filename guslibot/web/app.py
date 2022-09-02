@@ -43,6 +43,6 @@ app.add_middleware(ContentSizeLimitMiddleware, max_content_size=20 * 1024 * 1024
 
 
 async def start_server():
-    config = uvicorn.Config("guslibot.web.app:app", port=5000, host="0.0.0.0", log_level="info")
+    config = uvicorn.Config("guslibot.web.app:app", port=8999, host="0.0.0.0", log_level="info")
     server = uvicorn.Server(config)
     await server.serve()

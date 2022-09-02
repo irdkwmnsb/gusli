@@ -1,5 +1,6 @@
 import asyncio.queues
 import os
+import pathlib
 from typing import Union, Optional
 
 import pathvalidate
@@ -28,7 +29,7 @@ async def get_loc_for_media(file: Union[types.Audio, types.Voice, types.Video]):
 
 class AudioRequest(pydantic.BaseModel):
     by_displayname: str
-    mrl: str
+    mrl: Union[str, pathlib.Path]
     title: Optional[str]
     filename: str
 
