@@ -12,3 +12,4 @@ content_size_limit_asgi
 uvicorn
 nest_asyncio
 httpx
+yt-dlp

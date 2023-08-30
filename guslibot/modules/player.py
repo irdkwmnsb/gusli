@@ -14,6 +14,7 @@ import vlc
 import httpx
 import hashlib
 import textwrap
+import yt_dlp
 
 # import magic
 from guslibot.player import *
@@ -21,25 +22,6 @@ from guslibot.player import *
 
 async def get_loc_for_media(file: Union[types.Audio, types.Voice, types.Video]):
     return os.path.join(MUSIC_FOLDER, pathvalidate.sanitize_filename(file.file_unique_id))
-
-
-# class AudioRequest():
-#     by: int
-#     by_displayname: str
-#     by_username: Optional[str]
-#     mrl: str
-#     title: str
-#     filename: str
-#     orig_message: types.Message
-#
-#     def __init__(self, by, by_displayname, mrl, title, orig_message, filename, by_username=None):
-#         self.by = by
-#         self.by_displayname = by_displayname
-#         self.mrl = mrl
-#         self.title = title
-#         self.by_username = by_username
-#         self.filename = filename
-#         self.orig_message = orig_message
 
 @dp.message_handler(content_types=[ContentType.AUDIO, ContentType.VIDEO, ContentType.VOICE])
 @auth.requires_permission("player.queue.add")
@@ -198,6 +180,59 @@ async def tts(message: types.Message):
                               title=textwrap.shorten(text, placeholder=" ...", width=30),
                               orig_message=message,
                               filename="tts.mp3",
+                              by_username=from_user.username)
+    await pl_add(rq)
+    await msg.edit_text("Added...")
+
+
+def yt_download(query):
+    if not query.startswith("http"):
+        query = f"ytsearch:{query.replace(' ', '+')}"
+    parser, opts, all_urls, ydl_opts = yt_dlp.parse_options(["-x", "-o",
+                                                             f"{MUSIC_FOLDER}/%(id)s.%(ext)s",
+                                                             "--no-clean-info-json",
+                                                             "--user-agent",
+                                                             "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"])
+    with yt_dlp.YoutubeDL(ydl_opts) as dl:
+        parser.destroy() # wtf
+        downloaded = []
+        info = None # type: dict
+        def save_info(v):
+            nonlocal info
+            info = v
+        dl.add_post_hook(downloaded.append)
+        dl.add_postprocessor_hook(save_info)
+        dl.download([query])
+    logger.debug(downloaded)
+    logger.debug(info)
+    title = "Unknown"
+    if "entries" in info["info_dict"]: # youtube
+        title = info["info_dict"]["entries"][0].get("title", "No title")
+    elif "title" in info["info_dict"]:
+        title = info["info_dict"]["title"]
+    return downloaded[0], title
+
+@dp.message_handler(commands=["download"])
+@auth.requires_permission("player.download")
+async def tts(message: types.Message):
+    msg = await message.reply("Working...")
+    text = message.get_args()
+    loop = asyncio.get_event_loop()
+    try:
+        path, title = await loop.run_in_executor(None, yt_download, text)
+    except Exception as e:
+        logger.exception("Exception in download.")
+        await msg.edit_text("Error in download. Check logs with admin")
+        return
+    await msg.edit_text("Downloaded...")
+    from_user = message.from_user
+    logger.info("Adding %s %s", path, title)
+    rq = TelegramAudioRequest(by_id=from_user.id,
+                              by_displayname=from_user.first_name + " " + (from_user.last_name or ""),
+                              mrl=path,
+                              title=textwrap.shorten(title, placeholder=" ...", width=30),
+                              orig_message=message,
+                              filename=path,
                               by_username=from_user.username)
     await pl_add(rq)
     await msg.edit_text("Added...")
