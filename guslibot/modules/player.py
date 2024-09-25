@@ -15,6 +15,9 @@ import httpx
 import hashlib
 import textwrap
 import yt_dlp
+import random
+import json
+import base64
 
 # import magic
 from guslibot.player import *
@@ -159,19 +162,25 @@ async def tts(message: types.Message):
     if not loc.exists():
         await msg.edit_text("Downloading...")
         async with httpx.AsyncClient() as client:
-            r = await client.post("https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize", data={
-                "text": text,
-                "format": "mp3"
-            }, headers={
+            data = {
+                "text":text,
+                "hints":[{
+                    "volume":1.0,
+                }]
+            }
+            r = await client.post("https://tts.api.cloud.yandex.net:443/tts/v3/utteranceSynthesis", json=data, headers={
                 "Authorization": "Api-Key AQVN29zZnajTeidJjAFBEdCoOaoc7clOGaKtzKpU"
             })
             logger.debug(r.status_code)
-            with open(loc, "wb") as download_file:
-                logger.debug("Opened")
-                logger.debug("Reading")
+            with open("/tmp/guslu/swp", "wb") as download_file:
                 for chunk in r.iter_bytes():
                     download_file.write(chunk)
-                    logger.debug("Putting")
+            obj = json.loads(open("/tmp/guslu/swp").read())
+            b64_enc = obj['result']['audioChunk']['data']
+            music = base64.b64decode(b64_enc)
+            f = open(loc,'wb')
+            f.write(music)
+            f.close()
             await msg.edit_text("Downloaded...")
     from_user = message.from_user
     rq = TelegramAudioRequest(by_id=from_user.id,
