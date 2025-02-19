@@ -1,5 +1,7 @@
 import asyncio.queues
+import asyncio
 import os
+import subprocess
 import pathlib
 from typing import Union, Optional
 
@@ -19,6 +21,8 @@ play_queue_lock = asyncio.Lock()
 play_is_looped = False
 play_set_volume = 100
 MUSIC_FOLDER = os.path.join(config.STORAGE_LOCATION, "music")
+PROXY = config.PROXY
+API_KEY = config.API_KEY
 player = None  # type: vlc.MediaPlayer
 os.makedirs(MUSIC_FOLDER, exist_ok=True)
 
@@ -38,7 +42,6 @@ class TelegramAudioRequest(AudioRequest):
     by_id: int
     orig_message: types.Message
     by_username: Optional[str]
-
     class Config:
         arbitrary_types_allowed = True
 
@@ -96,17 +99,12 @@ async def playing_task():
         try:
             player_logger.info("Waiting for song")
             play_current_task = await play_queue.get()
-            logger.debug("current_task=%s", play_current_task)
             player_logger.info("Playing %s", play_current_task.title)
             if isinstance(play_current_task, TelegramAudioRequest):
                 await play_current_task.orig_message.reply("Playing now...")
             while True:
                 player.set_mrl(play_current_task.mrl)
                 result = player.play()
-                # if not player.is_playing():
-                #     await song.orig_message.reply("Could not start song")
-                # else:
-                #     logger.info("Successfully started")
                 if result == -1:
                     player_logger.error("Failed playing song")
                     player_logger.debug(play_current_task)
@@ -118,8 +116,8 @@ async def playing_task():
                     player_logger.info("Player is playing (at %s percent)", play_set_volume)
                     player.audio_set_volume(play_set_volume)
                     time_to_sleep = (player.get_length() - player.get_time()) / 1000
-                    player_logger.info(f"Sleeping %s seconds", time_to_sleep)
                     await asyncio.sleep(time_to_sleep)
+                logger.debug("loop ended")
                 if not play_is_looped:
                     break
                 player_logger.info("Playing again")

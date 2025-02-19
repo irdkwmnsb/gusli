@@ -1,4 +1,4 @@
-aiogram
+aiogram==2.23.1
 python-vlc
 python-dotenv
 pymongo

@@ -1,3 +1,4 @@
+import functools
 import pathlib
 import tempfile
 
@@ -22,6 +23,7 @@ import base64
 # import magic
 from guslibot.player import *
 
+dl_task = None
 
 async def get_loc_for_media(file: Union[types.Audio, types.Voice, types.Video]):
     return os.path.join(MUSIC_FOLDER, pathvalidate.sanitize_filename(file.file_unique_id))
@@ -68,6 +70,10 @@ async def enqueue(message: types.Message):
 @auth.requires_permission("player.queue.skip")
 async def skip(message: types.Message):
     logger.info("Trying to skip")
+    logger.debug(f'dl_task:{dl_task}')
+    if(dl_task != None):
+        dl_task.cancel()
+        os.remove(f'{MUSIC_FOLDER}/stream.ts')
     await pl_skip()
     await message.answer("ok")
 
@@ -147,6 +153,7 @@ async def volume_get(message: types.Message):
     await message.answer(f"Player is at {play_set_volume}")
 
 
+
 def get_loc_for_tts(text: str):
     filename = hashlib.md5(text.encode()).hexdigest()
     return pathlib.Path(MUSIC_FOLDER, filename + ".mp3")
@@ -168,8 +175,9 @@ async def tts(message: types.Message):
                     "volume":1.0,
                 }]
             }
+            logger.debug(f'API_KEY:{API_KEY}')
             r = await client.post("https://tts.api.cloud.yandex.net:443/tts/v3/utteranceSynthesis", json=data, headers={
-                "Authorization": "Api-Key AQVN29zZnajTeidJjAFBEdCoOaoc7clOGaKtzKpU"
+                "Authorization": f'Api-Key {API_KEY}'
             })
             logger.debug(r.status_code)
             with open("/tmp/guslu/swp", "wb") as download_file:
@@ -193,15 +201,21 @@ async def tts(message: types.Message):
     await pl_add(rq)
     await msg.edit_text("Added...")
 
-
-def yt_download(query):
+def yt_download(query, video=False, stream=False):
     if not query.startswith("http"):
         query = f"ytsearch:{query.replace(' ', '+')}"
-    parser, opts, all_urls, ydl_opts = yt_dlp.parse_options(["-x", "-o",
-                                                             f"{MUSIC_FOLDER}/%(id)s.%(ext)s",
+    options=["--no-part","-o",
+                                                             f"{MUSIC_FOLDER}/{'stream' if stream else '%(id)s'}.{'ts' if stream else '%(ext)s'}",
                                                              "--no-clean-info-json",
                                                              "--user-agent",
-                                                             "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"])
+                                                             "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"]
+    if(PROXY != None):
+        options.append("--proxy")
+        options.append(PROXY)
+    if(not video):
+        options.append("-x")
+    logger.debug(str(options))
+    parser, opts, all_urls, ydl_opts = yt_dlp.parse_options(options)
     with yt_dlp.YoutubeDL(ydl_opts) as dl:
         parser.destroy() # wtf
         downloaded = []
@@ -232,6 +246,33 @@ async def tts(message: types.Message):
     except Exception as e:
         logger.exception("Exception in download.")
         await msg.edit_text("Error in download. Check logs with admin")
+        return
+    await msg.edit_text("Downloaded...")
+    from_user = message.from_user
+    logger.info("Adding %s %s", path, title)
+    rq = TelegramAudioRequest(by_id=from_user.id,
+                              by_displayname=from_user.first_name + " " + (from_user.last_name or ""),
+                              mrl=path,
+                              title=textwrap.shorten(title, placeholder=" ...", width=30),
+                              orig_message=message,
+                              filename=path,
+                              by_username=from_user.username)
+    await pl_add(rq)
+    await msg.edit_text("Added...")
+
+@dp.message_handler(commands=["playstream"])
+@auth.requires_permission("player.playstream")
+async def tts(message: types.Message):
+    global dl_task
+    msg = await message.reply("Playing in 30 seconds...")
+    text = message.get_args()
+    loop = asyncio.get_event_loop()
+    dl_task = loop.run_in_executor(None, functools.partial(yt_download, text, stream=True))
+    await asyncio.sleep(30)#wait for start of download and load several segments
+    path=f'{MUSIC_FOLDER}/stream.ts'
+    title='stream'
+    if(not os.path.exists(f'{MUSIC_FOLDER}/stream.ts')):
+        logger.error('stream download failed')
         return
     await msg.edit_text("Downloaded...")
     from_user = message.from_user
