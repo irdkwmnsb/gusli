@@ -69,6 +69,7 @@ async def enqueue(message: types.Message):
 @dp.message_handler(commands=["skip"])
 @auth.requires_permission("player.queue.skip")
 async def skip(message: types.Message):
+    global dl_task
     logger.info("Trying to skip")
     logger.debug(f'dl_task:{dl_task}')
     if(dl_task != None):
