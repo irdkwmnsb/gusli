@@ -73,6 +73,7 @@ async def skip(message: types.Message):
     logger.debug(f'dl_task:{dl_task}')
     if(dl_task != None):
         dl_task.cancel()
+        dl_task=None
         os.remove(f'{MUSIC_FOLDER}/stream.ts')
     await pl_skip()
     await message.answer("ok")
